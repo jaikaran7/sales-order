@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script
+        src="https://sapui5.hana.ondemand.com/resources/sap-ui-core.js"
+        data-sap-ui-libs="sap.m,sap.viz"
+        data-sap-ui-theme="sap_horizon"
+        data-sap-ui-async="true">
+    </script>
+</head>
+
+<body class="sapUiBody">
+<div id="content"></div>
+
+<script>
+sap.ui.getCore().attachInit(async function () {
+
+    // ================= FETCH DATA =================
+    async function loadData() {
+        const [ordersRes, customersRes] = await Promise.all([
+            fetch("/odata/v4/sales/SalesOrders?$expand=customer"),
+            fetch("/odata/v4/sales/Customers")
+        ]);
+
+        return {
+            orders: (await ordersRes.json()).value,
+            customers: (await customersRes.json()).value
+        };
+    }
+
+    let { orders, customers } = await loadData();
+
+    // ================= CALCULATE REVENUE =================
+    function getRevenue() {
+        return orders.reduce(function(sum, o) {
+            return sum + Number(o.price || 0);
+        }, 0);
+    }
+
+    // ================= APP =================
+    var app = new sap.m.App();
+
+    function showDashboard() {
+        app.removeAllPages();
+        app.addPage(createDashboard());
+        app.to(app.getPages()[0]);
+    }
+
+    function showOrders() {
+        app.removeAllPages();
+        app.addPage(createOrdersPage());
+        app.to(app.getPages()[0]);
+    }
+
+    // ================= DASHBOARD =================
+    function createDashboard() {
+
+        var totalRevenue = getRevenue();
+
+        var oModel = new sap.ui.model.json.JSONModel({
+            SalesOrders: orders.map(function(o) {
+                return {
+                    product: o.product,
+                    price: Number(o.price || 0)
+                };
+            })
+        });
+
+        var chart = new sap.viz.ui5.controls.VizFrame({
+            vizType: "column",
+            height: "400px",
+            width: "100%",
+            dataset: new sap.viz.ui5.data.FlattenedDataset({
+                dimensions: [{ name: "Product", value: "{product}" }],
+                measures: [{ name: "Revenue", value: "{price}" }],
+                data: { path: "/SalesOrders" }
+            }),
+            feeds: [
+                new sap.viz.ui5.controls.common.feeds.FeedItem({
+                    uid: "categoryAxis",
+                    type: "Dimension",
+                    values: ["Product"]
+                }),
+                new sap.viz.ui5.controls.common.feeds.FeedItem({
+                    uid: "valueAxis",
+                    type: "Measure",
+                    values: ["Revenue"]
+                })
+            ]
+        });
+
+        chart.setModel(oModel);
+
+        return new sap.m.Page({
+            title: "Sales Dashboard",
+            content: [
+
+                new sap.m.Button({
+                    text: "View Orders →",
+                    type: "Emphasized",
+                    press: showOrders
+                }),
+
+                new sap.m.HBox({
+                    justifyContent: "SpaceAround",
+                    items: [
+
+                        new sap.m.GenericTile({
+                            header: "Total Orders",
+                            tileContent: new sap.m.TileContent({
+                                content: new sap.m.NumericContent({
+                                    value: orders.length,
+                                    truncateValueTo: 10,
+                                    scale: ""
+                                })
+                            })
+                        }),
+
+                        new sap.m.GenericTile({
+                            header: "Customers",
+                            tileContent: new sap.m.TileContent({
+                                content: new sap.m.NumericContent({
+                                    value: customers.length,
+                                    truncateValueTo: 10,
+                                    scale: ""
+                                })
+                            })
+                        }),
+
+                        new sap.m.GenericTile({
+                            header: "Revenue",
+                            tileContent: new sap.m.TileContent({
+                                content: new sap.m.Text({
+                                    text: "₹ " + totalRevenue.toLocaleString("en-IN"),
+                                    textAlign: "Center"
+                                })
+                            })
+                        })
+                    ]
+                }),
+
+                chart
+            ]
+        });
+    }
+
+    // ================= CREATE/GET CUSTOMER HELPER =================
+    async function getOrCreateCustomer(comboId) {
+
+        var combo = sap.ui.getCore().byId(comboId);
+        var selectedKey = combo.getSelectedKey();
+        var enteredName = (combo.getValue() || "").trim();
+
+        if (selectedKey) return selectedKey;
+        if (!enteredName) return null;
+
+        var matched = customers.find(function(c) {
+            return c.name.toLowerCase() === enteredName.toLowerCase();
+        });
+        if (matched) return matched.ID;
+
+        var res = await fetch("/odata/v4/sales/Customers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: enteredName })
+        });
+
+        var newCustomer = await res.json();
+        return newCustomer.ID;
+    }
+
+    // ================= ORDERS PAGE =================
+    function createOrdersPage() {
+
+        var oModel = new sap.ui.model.json.JSONModel({
+            SalesOrders: orders
+        });
+
+        // ================= GROWING TABLE =================
+        var oTable = new sap.m.Table({
+            growing: true,
+            growingThreshold: 5,
+            growingScrollToLoad: true,
+            columns: [
+                new sap.m.Column({ header: new sap.m.Text({ text: "Product" }) }),
+                new sap.m.Column({ header: new sap.m.Text({ text: "Customer" }) }),
+                new sap.m.Column({ header: new sap.m.Text({ text: "Price" }) }),
+                new sap.m.Column({ header: new sap.m.Text({ text: "Actions" }) })
+            ]
+        });
+
+        // ================= SORT BUTTON =================
+        var sortAscending = true;
+
+        var sortButton = new sap.m.Button({
+            text: "Sort by Price ↕",
+            press: function() {
+                var binding = oTable.getBinding("items");
+                binding.sort(new sap.ui.model.Sorter("price", !sortAscending));
+                sortAscending = !sortAscending;
+                sortButton.setText(sortAscending ? "Sort by Price ↕" : "Sort by Price ↓");
+            }
+        });
+
+        // ================= CREATE DIALOG =================
+        var createDialog = new sap.m.Dialog({
+            title: "Add Order",
+            content: [
+                new sap.m.Input("cProduct", { placeholder: "Product" }),
+                new sap.m.ComboBox("cCustomer", {
+                    placeholder: "Select or type new customer",
+                    editable: true,
+                    items: customers.map(function(c) {
+                        return new sap.ui.core.Item({ key: c.ID, text: c.name });
+                    })
+                }),
+                new sap.m.Input("cPrice", { placeholder: "Price", type: "Number" })
+            ],
+            beginButton: new sap.m.Button({
+                text: "Create",
+                press: async function() {
+                    var customerID = await getOrCreateCustomer("cCustomer");
+                    await fetch("/odata/v4/sales/SalesOrders", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            product: sap.ui.getCore().byId("cProduct").getValue(),
+                            price: parseFloat(sap.ui.getCore().byId("cPrice").getValue()) || 0,
+                            customer_ID: customerID
+                        })
+                    });
+                    location.reload();
+                }
+            }),
+            endButton: new sap.m.Button({
+                text: "Cancel",
+                press: function() { createDialog.close(); }
+            })
+        });
+
+        // ================= EDIT DIALOG =================
+        var editDialog = new sap.m.Dialog({
+            title: "Edit Order",
+            content: [
+                new sap.m.Input("eProduct", { placeholder: "Product" }),
+                new sap.m.ComboBox("eCustomer", {
+                    placeholder: "Select or type new customer",
+                    editable: true,
+                    items: customers.map(function(c) {
+                        return new sap.ui.core.Item({ key: c.ID, text: c.name });
+                    })
+                }),
+                new sap.m.Input("ePrice", { placeholder: "Price", type: "Number" })
+            ],
+            beginButton: new sap.m.Button({
+                text: "Save",
+                press: async function() {
+                    var id = editDialog.data("orderId");
+                    var customerID = await getOrCreateCustomer("eCustomer");
+                    await fetch("/odata/v4/sales/SalesOrders(" + id + ")", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            product: sap.ui.getCore().byId("eProduct").getValue(),
+                            price: parseFloat(sap.ui.getCore().byId("ePrice").getValue()) || 0,
+                            customer_ID: customerID
+                        })
+                    });
+                    location.reload();
+                }
+            }),
+            endButton: new sap.m.Button({
+                text: "Cancel",
+                press: function() { editDialog.close(); }
+            })
+        });
+
+        // ================= BIND TABLE WITH TEMPLATE =================
+        oTable.setModel(oModel);
+
+        oTable.bindItems({
+            path: "/SalesOrders",
+            template: new sap.m.ColumnListItem({
+                cells: [
+                    new sap.m.Text({ text: "{product}" }),
+                    new sap.m.Text({ text: "{customer/name}" }),
+                    new sap.m.Text({ text: "{price}" }),
+
+                    new sap.m.HBox({
+                        items: [
+                            new sap.m.Button({
+                                text: "Edit",
+                                press: function() {
+                                    var data = this.getBindingContext().getObject();
+
+                                    editDialog.data("orderId", data.ID);
+                                    sap.ui.getCore().byId("eProduct").setValue(data.product || "");
+                                    sap.ui.getCore().byId("ePrice").setValue(Number(data.price || 0));
+
+                                    var eCombo = sap.ui.getCore().byId("eCustomer");
+                                    eCombo.setSelectedKey("");
+                                    eCombo.setValue("");
+
+                                    if (data.customer_ID) {
+                                        eCombo.setSelectedKey(String(data.customer_ID));
+                                    } else if (data.customer && data.customer.name) {
+                                        eCombo.setValue(data.customer.name);
+                                    }
+
+                                    editDialog.open();
+                                }
+                            }),
+
+                            new sap.m.Button({
+                                text: "Delete",
+                                type: "Reject",
+                                press: async function() {
+                                    var data = this.getBindingContext().getObject();
+                                    await fetch("/odata/v4/sales/SalesOrders(" + data.ID + ")", {
+                                        method: "DELETE"
+                                    });
+                                    location.reload();
+                                }
+                            })
+                        ]
+                    })
+                ]
+            })
+        });
+
+        // ================= PAGE =================
+        return new sap.m.Page({
+            title: "Sales Orders",
+            content: [
+
+                new sap.m.Button({
+                    text: "← Back",
+                    press: showDashboard
+                }),
+
+                new sap.m.Toolbar({
+                    content: [
+                        sortButton,
+                        new sap.m.ToolbarSpacer(),
+                        new sap.m.Button({
+                            text: "+ Add",
+                            type: "Emphasized",
+                            press: function() { createDialog.open(); }
+                        })
+                    ]
+                }),
+
+                oTable
+            ]
+        });
+    }
+
+    // ================= START =================
+    app.addPage(createDashboard());
+    app.placeAt("content");
+
+});
+</script>
+
+</body>
+</html>

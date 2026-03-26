@@ -1,0 +1,22 @@
+<mvc:View
+  controllerName="sales.salesui.controller.Dashboard"
+  xmlns:mvc="sap.ui.core.mvc"
+  xmlns="sap.m">
+
+  <App id="app">
+    <Page title="Dashboard">
+      <content>
+
+        <VBox>
+          <Title text="Sales Dashboard" level="H1"/>
+
+          <ObjectNumber number="3" unit="Orders"/>
+          <ObjectNumber number="85000" unit="Total Amount"/>
+
+        </VBox>
+
+      </content>
+    </Page>
+  </App>
+
+</mvc:View>

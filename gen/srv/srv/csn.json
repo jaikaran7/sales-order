@@ -1,0 +1,128 @@
+{
+  "namespace": "my.sales",
+  "definitions": {
+    "my.sales.Customers": {
+      "kind": "entity",
+      "elements": {
+        "ID": {
+          "key": true,
+          "type": "cds.UUID"
+        },
+        "name": {
+          "type": "cds.String"
+        }
+      }
+    },
+    "my.sales.SalesOrders": {
+      "kind": "entity",
+      "elements": {
+        "ID": {
+          "key": true,
+          "type": "cds.UUID"
+        },
+        "product": {
+          "type": "cds.String"
+        },
+        "price": {
+          "type": "cds.Decimal",
+          "precision": 10,
+          "scale": 2
+        },
+        "customer_ID": {
+          "type": "cds.UUID"
+        },
+        "customer": {
+          "type": "cds.Association",
+          "target": "my.sales.Customers",
+          "on": [
+            {
+              "ref": [
+                "customer",
+                "ID"
+              ]
+            },
+            "=",
+            {
+              "ref": [
+                "customer_ID"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "SalesService": {
+      "@source": "srv/service.cds",
+      "kind": "service"
+    },
+    "SalesService.SalesOrders": {
+      "kind": "entity",
+      "projection": {
+        "from": {
+          "ref": [
+            "my.sales.SalesOrders"
+          ]
+        }
+      },
+      "elements": {
+        "ID": {
+          "key": true,
+          "type": "cds.UUID"
+        },
+        "product": {
+          "type": "cds.String"
+        },
+        "price": {
+          "type": "cds.Decimal",
+          "precision": 10,
+          "scale": 2
+        },
+        "customer_ID": {
+          "type": "cds.UUID"
+        },
+        "customer": {
+          "type": "cds.Association",
+          "target": "SalesService.Customers",
+          "on": [
+            {
+              "ref": [
+                "customer",
+                "ID"
+              ]
+            },
+            "=",
+            {
+              "ref": [
+                "customer_ID"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "SalesService.Customers": {
+      "kind": "entity",
+      "projection": {
+        "from": {
+          "ref": [
+            "my.sales.Customers"
+          ]
+        }
+      },
+      "elements": {
+        "ID": {
+          "key": true,
+          "type": "cds.UUID"
+        },
+        "name": {
+          "type": "cds.String"
+        }
+      }
+    }
+  },
+  "meta": {
+    "creator": "CDS Compiler v5.9.16",
+    "flavor": "inferred"
+  },
+  "$version": "2.0"
+}

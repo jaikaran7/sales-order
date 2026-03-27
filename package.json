@@ -3,19 +3,18 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "@sap/cds": "^8",
-    "@cap-js/sqlite": "^1"
+    "@sap/cds": "^8"
   },
   "scripts": {
-    "start": "node node_modules/@sap/cds/bin/cds.js run"
-  },
-  "engines": {
-    "node": ">=18"
+    "start": "cds run"
   },
   "cds": {
     "requires": {
       "db": {
-        "kind": "sqlite"
+        "kind": "sqlite",
+        "credentials": {
+          "database": ":memory:"
+        }
       }
     }
   }

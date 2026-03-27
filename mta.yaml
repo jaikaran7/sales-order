@@ -1,18 +1,14 @@
-_schema-version: 3.3.0
+_schema-version: "3.3"
 ID: sales-order-app
-version: 1.0.0
-description: "A simple CAP project."
-
-parameters:
-  enable-parallel-deployments: true
+version: "1.0.0"
+description: "Minimal CAP srv-only deployment"
 
 build-parameters:
   before-all:
     - builder: custom
       commands:
-        - npm install --legacy-peer-deps
+        - npm install
         - npx cds build --production
-        - cp package.json gen/srv/package.json   # 🔥 VERY IMPORTANT
 
 modules:
   - name: sales-order-app-srv
@@ -21,6 +17,5 @@ modules:
     parameters:
       instances: 1
       buildpack: nodejs_buildpack
-      command: node node_modules/@sap/cds/bin/cds.js run   # 🔥 FORCE CORRECT START
     build-parameters:
       builder: npm

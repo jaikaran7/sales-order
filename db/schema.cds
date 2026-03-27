@@ -8,8 +8,6 @@ entity Customers {
 entity SalesOrders {
   key ID : UUID;
   product : String;
-  price : Decimal(10,2);
-
-  customer_ID : UUID;
-  customer : Association to Customers on customer.ID = customer_ID;
+  price : Decimal(9,2);
+  customer : Association to Customers;
 }

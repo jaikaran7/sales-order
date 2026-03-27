@@ -17,5 +17,6 @@ modules:
     parameters:
       instances: 1
       buildpack: nodejs_buildpack
+      command: node srv/server.js   # 🔥 ADD THIS LINE
     build-parameters:
       builder: npm

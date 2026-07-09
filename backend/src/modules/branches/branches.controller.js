@@ -3,6 +3,7 @@ const cache = require('../../services/cache')
 const { ok, created, notFound, serverError, badRequest } = require('../../utils/response')
 const { MIN_GRADE, MAX_GRADE, classLabelForGrade } = require('../../utils/schoolGrades')
 const { OPERATIONAL_BRANCH_FILTER } = require('../../utils/operationalBranch')
+const { computeOrderDue } = require('../../utils/orderDue')
 
 function branchCacheKeys() {
   return ['branches:operational', 'branches:all:withArchived']
@@ -191,10 +192,17 @@ async function getStudents(req, res) {
       const latest = student.orders[0]
       const latestConfirmedOrder = activeOrders[0]
       const latestRemarkOrder = student.orders.find((o) => String(o.notes ?? '').trim())
-      const totalAmount = Number(latest?.total ?? 0)
-      const paidAmount = Number(latest?.paidAmount ?? 0)
-      const dueAmount = Math.max(0, totalAmount - paidAmount)
-      const txns = latest?.transactions ?? []
+      const openDueOrder = student.orders.find((o) => {
+        if (o.status === 'CANCELLED') return false
+        if (!['UNPAID', 'PARTIAL'].includes(o.paymentStatus)) return false
+        return computeOrderDue(o).dueAmount > 0.009
+      })
+      const dueOrder = openDueOrder ?? null
+      const dueBreakdown = dueOrder ? computeOrderDue(dueOrder) : null
+      const totalAmount = Number(dueOrder?.total ?? latest?.total ?? 0)
+      const paidAmount = Number(dueOrder?.paidAmount ?? latest?.paidAmount ?? 0)
+      const dueAmount = dueBreakdown?.dueAmount ?? 0
+      const txns = (dueOrder ?? latest)?.transactions ?? []
       const methodSummary = txns.length
         ? Array.from(new Set(txns.map((t) => t.paymentMethod).filter(Boolean))).join('+')
         : (latest?.paymentMethod ?? null)
@@ -220,8 +228,8 @@ async function getStudents(req, res) {
 
       return {
         ...student,
-        latestOrderId: latest?.orderId ?? null,
-        latestOrderInternalId: latest?.id ?? null,
+        latestOrderId: dueOrder?.orderId ?? latest?.orderId ?? null,
+        latestOrderInternalId: dueOrder?.id ?? latest?.id ?? null,
         latestOrderDate: latestConfirmedOrder?.paidAt ?? latestConfirmedOrder?.createdAt ?? null,
         latestOrderRemarks: latestRemarkOrder?.notes?.trim() ?? null,
         latestPaymentMethod: methodSummary,

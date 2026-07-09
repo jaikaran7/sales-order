@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { branchesApi, ordersApi } from '@/services/api'
 import { useToast } from '@/context/ToastContext'
@@ -20,6 +20,21 @@ function formatReceiptDate(d) {
 
 function formatReceiptTime(d) {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+}
+
+function parseDueFromOrder(order) {
+  if (!order) return 0
+  const total = Number(order.total ?? 0)
+  const paid = Number(order.paidAmount ?? 0)
+  let discount = 0
+  const noteMatch = String(order.notes ?? '').match(/Discount [Aa]pplied:\s*₹?([\d,]+(?:\.\d+)?)/)
+  if (noteMatch) discount += Number(String(noteMatch[1]).replace(/,/g, ''))
+  for (const tx of order.transactions ?? []) {
+    const txMatch = String(tx.notes ?? '').match(/Discount [Aa]pplied:\s*₹?([\d,]+(?:\.\d+)?)/)
+    if (txMatch) discount += Number(String(txMatch[1]).replace(/,/g, ''))
+  }
+  const effective = Math.max(0, total - discount)
+  return Math.max(0, effective - paid)
 }
 
 function buildOrderDetails(orderItems, totals) {
@@ -81,24 +96,58 @@ export default function OrderPayment() {
   const fetchBranch = useCallback(() => (branchId ? branchesApi.getOne(branchId) : null), [branchId])
   const { data: branchData } = useApi(fetchBranch, null, [branchId])
   const branchName = branchData?.name ?? ''
-  const isDueSettlement = Boolean(existingOrderId && Number(incomingDueAmount) > 0)
-  const dueAmount = Math.max(0, Number(incomingDueAmount ?? 0))
-  const orderDetails = isDueSettlement
-    ? {
-        bookKit: [
-          {
-            label: `Pending due for order ${existingOrderNumber ?? '—'}`,
-            price: dueAmount,
-          },
-        ],
-        uniformKit: [],
-        subtotal: dueAmount,
-        administrativeFee: 0,
-        total: dueAmount,
-        totalAmount: Number(incomingTotalAmount ?? 0),
-        paidAmount: Number(incomingPaidAmount ?? 0),
+  const fetchExistingOrder = useCallback(
+    () => (existingOrderId ? ordersApi.getOne(existingOrderId) : null),
+    [existingOrderId],
+  )
+  const { data: existingOrderPayload } = useApi(fetchExistingOrder, null, [existingOrderId])
+  const existingOrder = existingOrderPayload?.data?.data
+    ?? existingOrderPayload?.data
+    ?? existingOrderPayload
+    ?? null
+  const isDueSettlement = Boolean(existingOrderId)
+  const resolvedDueAmount = Math.max(
+    0,
+    Number(incomingDueAmount ?? 0) > 0
+      ? Number(incomingDueAmount)
+      : parseDueFromOrder(existingOrder),
+  )
+  const orderDetails = useMemo(() => {
+    if (!isDueSettlement) return buildOrderDetails(orderItems, totals)
+    if (existingOrder?.items?.length) {
+      const details = buildOrderDetails(existingOrder.items, { total: Number(existingOrder.total ?? 0) })
+      return {
+        ...details,
+        subtotal: resolvedDueAmount,
+        total: resolvedDueAmount,
+        totalAmount: Number(incomingTotalAmount ?? existingOrder.total ?? 0),
+        paidAmount: Number(incomingPaidAmount ?? existingOrder.paidAmount ?? 0),
       }
-    : buildOrderDetails(orderItems, totals)
+    }
+    return {
+      bookKit: [
+        {
+          label: `Pending due for order ${existingOrderNumber ?? existingOrder?.orderId ?? '—'}`,
+          price: resolvedDueAmount,
+        },
+      ],
+      uniformKit: [],
+      subtotal: resolvedDueAmount,
+      administrativeFee: 0,
+      total: resolvedDueAmount,
+      totalAmount: Number(incomingTotalAmount ?? 0),
+      paidAmount: Number(incomingPaidAmount ?? 0),
+    }
+  }, [
+    isDueSettlement,
+    orderItems,
+    totals,
+    existingOrder,
+    resolvedDueAmount,
+    existingOrderNumber,
+    incomingTotalAmount,
+    incomingPaidAmount,
+  ])
   const [discountAmount, setDiscountAmount] = useState('0')
   const [paymentSplit, setPaymentSplit] = useState({
     firstMethod: 'cash',
@@ -125,6 +174,14 @@ export default function OrderPayment() {
   const printAreaRef = useRef(null)
 
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }) }, [])
+
+  useEffect(() => {
+    if (!isDueSettlement || resolvedDueAmount <= 0) return
+    setPaymentSplit((prev) => ({
+      ...prev,
+      firstAmount: String(resolvedDueAmount),
+    }))
+  }, [isDueSettlement, resolvedDueAmount])
   const submitInFlightRef = useRef(false)
   const autoDiscountRemarkRef = useRef('')
 
@@ -348,7 +405,12 @@ export default function OrderPayment() {
 
     try {
       let persistedOrderId = existingOrderId
-      if (isDueSettlement && existingOrderId) {
+      if (existingOrderId) {
+        if (resolvedDueAmount <= 0.009 && finalPayable <= 0.009) {
+          setSubmitError('This order has no balance due.')
+          releaseSubmitLock()
+          return
+        }
         setReceiptOrderNotes(orderNotes.trim())
         let latestOrderPayload = null
         for (const [idx, entry] of paymentEntries.entries()) {
@@ -431,6 +493,7 @@ export default function OrderPayment() {
     orderItems,
     existingOrderId,
     existingOrderNumber,
+    resolvedDueAmount,
     isDueSettlement,
     remarks,
     orderNotes,

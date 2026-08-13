@@ -10,6 +10,7 @@ import AdmissionPayment from '@/features/admissions/payment'
 import AdmissionTransactions from '@/features/admissions/transactions'
 import Transactions from '@/features/transactions'
 import TransactionDetail from '@/features/transactions/detail'
+import OrderEditFormPage from '@/features/orders/edit-order'
 import AccountsModule from '@/features/super-admin/accounts'
 import BulkImport from '@/features/super-admin/bulk-import'
 import SalesOverview from '@/features/sales/dashboard/SalesOverview'
@@ -57,6 +58,7 @@ export const adminShellRouteTree = (
     <Route path="orders/new" element={<GuardedAnyModule flags={['canPlaceOrders', 'canCreateUniformOrders', 'canViewStudentList']}><NewOrderSelection /></GuardedAnyModule>} />
     <Route path="orders/configure" element={<GuardedAnyModule flags={['canPlaceOrders', 'canCreateUniformOrders']}><OrderConfiguration /></GuardedAnyModule>} />
     <Route path="orders/payment" element={<GuardedAnyModule flags={['canPlaceOrders', 'canCreateUniformOrders']}><OrderPayment /></GuardedAnyModule>} />
+    <Route path="orders/:id/edit" element={<GuardedAnyModule flags={['canPlaceOrders', 'canRequestOrderEdits', 'canCreateUniformOrders']}><OrderEditFormPage /></GuardedAnyModule>} />
     <Route path="admissions" element={<GuardedModule flag="canViewAdmissions"><AdmissionsList /></GuardedModule>} />
     <Route path="admissions/payment" element={<GuardedModule flag="canManageAdmissions"><AdmissionPayment /></GuardedModule>} />
     <Route path="admissions/transactions" element={<GuardedModule flag="canViewAdmissionTransactions"><AdmissionTransactions /></GuardedModule>} />

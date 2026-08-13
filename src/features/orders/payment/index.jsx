@@ -22,6 +22,27 @@ function formatReceiptTime(d) {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
 }
 
+function todayIstDateString() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
+
+function minAllowedOrderDateString(maxPastDays = 90) {
+  const today = todayIstDateString()
+  const d = new Date(`${today}T12:00:00+05:30`)
+  d.setDate(d.getDate() - maxPastDays)
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d)
+}
+
 function parseDueFromOrder(order) {
   if (!order) return 0
   const total = Number(order.total ?? 0)
@@ -149,6 +170,9 @@ export default function OrderPayment() {
     incomingPaidAmount,
   ])
   const [discountAmount, setDiscountAmount] = useState('0')
+  const [orderDate, setOrderDate] = useState(() => todayIstDateString())
+  const minOrderDate = useMemo(() => minAllowedOrderDateString(90), [])
+  const maxOrderDate = useMemo(() => todayIstDateString(), [])
   const [paymentSplit, setPaymentSplit] = useState({
     firstMethod: 'cash',
     firstAmount: String(isGroupOrder ? (groupGrandTotal ?? 0) : (orderDetails.total ?? 0)),
@@ -307,6 +331,7 @@ export default function OrderPayment() {
       try {
         const groupPayload = {
           branchId,
+          orderDate,
           students: groupStudents.map((s) => ({
             studentId: s.student.id,
             items: (s.orderItems ?? []).map((item) => ({
@@ -383,6 +408,7 @@ export default function OrderPayment() {
             const payResult = await ordersApi.processPayment(orderPk, {
               amount: entry.amount,
               paymentMethod: apiMethod,
+              paidAt: orderDate,
               notes:
                 idx === 0
                   ? (remarks || undefined)
@@ -447,6 +473,7 @@ export default function OrderPayment() {
           totalAmount: Number(orderDetails.total ?? 0),
           discountAmount: discountValue,
           notes: trimmedNotes || undefined,
+          orderDate,
         })
         const payload = createRes?.data?.data ?? createRes?.data
         const createdOrder = payload?.order ?? payload
@@ -458,7 +485,14 @@ export default function OrderPayment() {
           toast.info(w, 7000)
         }
         if (createdOrder?.orderId) {
-          setReceiptInfo((prev) => ({ ...prev, orderId: createdOrder.orderId }))
+          const businessDate = orderDate
+            ? new Date(`${orderDate}T12:00:00`)
+            : new Date()
+          setReceiptInfo((prev) => ({
+            ...prev,
+            orderId: createdOrder.orderId,
+            issuedAt: Number.isNaN(businessDate.getTime()) ? new Date() : businessDate,
+          }))
         }
 
         showCheckoutSuccess(buildReceiptFinancials(createdOrder, paymentEntries))
@@ -491,6 +525,7 @@ export default function OrderPayment() {
     student,
     branchId,
     orderItems,
+    orderDate,
     existingOrderId,
     existingOrderNumber,
     resolvedDueAmount,
@@ -559,6 +594,25 @@ export default function OrderPayment() {
       <main className="w-full px-4 pb-12 pt-6 md:px-8 lg:px-12">
         <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-12">
           <section className="space-y-10 lg:col-span-7">
+            {!isDueSettlement && (
+              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-lowest p-5 shadow-sm">
+                <label className="mb-2 block font-headline text-sm font-bold text-on-surface" htmlFor="order-date">
+                  Order date
+                </label>
+                <p className="mb-3 text-xs text-on-surface-variant">
+                  Choose today or a previous date (up to 90 days). Transactions and stock logs will use this date.
+                </p>
+                <input
+                  id="order-date"
+                  type="date"
+                  value={orderDate}
+                  min={minOrderDate}
+                  max={maxOrderDate}
+                  onChange={(e) => setOrderDate(e.target.value || todayIstDateString())}
+                  className="w-full max-w-xs rounded-xl border border-outline-variant/20 bg-surface px-3 py-2.5 text-sm font-semibold text-on-surface outline-none focus:border-primary"
+                />
+              </div>
+            )}
             <PaymentMethod
               payment={paymentSplit}
               onPaymentChange={setPaymentSplit}

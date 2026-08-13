@@ -6,6 +6,7 @@ const { OPERATIONAL_BRANCH_FILTER } = require('../../utils/operationalBranch')
 const { currentPermissionValue } = require('../../middleware/auth')
 const { allocatePayment } = require('../../utils/paymentAllocation')
 const { allocateUniqueOrderId, allocateUniqueGroupRef } = require('../../utils/orderRef')
+const { resolveOrderDateInput } = require('../../utils/orderDate')
 
 const SUPPORTED_CLASS_GRADE = { gte: -2, lte: 10 }
 
@@ -72,12 +73,14 @@ async function applyOrderStockDeductions(tx, {
   student,
   branchName,
   performedById,
+  eventDate,
 }) {
   const warnings = []
   const classLabel = student.class?.label ?? '—'
   const section = student.class?.section ?? '—'
   const rollNumber = student.rollNumber ?? '—'
   const studentName = student.name ?? '—'
+  const logEventDate = eventDate instanceof Date ? eventDate : new Date()
 
   const bookDeltas = new Map()
   const uniformDeltas = new Map()
@@ -128,6 +131,7 @@ async function applyOrderStockDeductions(tx, {
         quantityAfter: after,
         quantityDelta,
         performedById,
+        eventDate: logEventDate,
         notes: buildDistributionLogNotes({
           studentName,
           rollNumber,
@@ -179,6 +183,7 @@ async function applyOrderStockDeductions(tx, {
         quantityAfter: after,
         quantityDelta,
         performedById,
+        eventDate: logEventDate,
         notes: buildDistributionLogNotes({
           studentName,
           rollNumber,
@@ -207,9 +212,9 @@ async function list(req, res) {
     if (paymentStatus) where.paymentStatus = paymentStatus
     if (status) where.status = status
     if (dateFrom || dateTo) {
-      where.createdAt = {}
-      if (dateFrom) where.createdAt.gte = new Date(dateFrom)
-      if (dateTo) where.createdAt.lte = new Date(dateTo)
+      where.orderDate = {}
+      if (dateFrom) where.orderDate.gte = new Date(dateFrom)
+      if (dateTo) where.orderDate.lte = new Date(dateTo)
     }
     if (search) {
       where.OR = [
@@ -224,7 +229,7 @@ async function list(req, res) {
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ orderDate: 'desc' }, { createdAt: 'desc' }],
         include: {
           student: { select: { name: true, rollNumber: true, initials: true } },
           branch: { select: { name: true, code: true } },
@@ -242,10 +247,14 @@ async function create(req, res) {
   const startedAt = Date.now()
   console.log('[orders.create] start', { branchId: req.body?.branchId, studentId: req.body?.studentId })
   try {
-    const { studentId, branchId, items, notes, discountAmount = 0, totalAmount } = req.body
+    const { studentId, branchId, items, notes, discountAmount = 0, totalAmount, orderDate: orderDateRaw } = req.body
     if (!studentId || !branchId || !items?.length) {
       return badRequest(res, 'studentId, branchId, and items are required')
     }
+
+    const dateResolved = resolveOrderDateInput(orderDateRaw)
+    if (!dateResolved.ok) return badRequest(res, dateResolved.error)
+    const { orderDate, bounds: orderDateBounds } = dateResolved
 
     const student = await prisma.students.findUnique({
       where: { id: studentId },
@@ -264,17 +273,12 @@ async function create(req, res) {
     const branchName = branchRow.name
 
     const result = await prisma.$transaction(async (tx) => {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const tomorrow = new Date(today)
-      tomorrow.setDate(today.getDate() + 1)
-
       const requestedSet = normalizeOrderItemSet(items)
       const [existingToday, classData] = await Promise.all([
         tx.order.findMany({
           where: {
             studentId,
-            createdAt: { gte: today, lt: tomorrow },
+            orderDate: { gte: orderDateBounds.start, lt: orderDateBounds.end },
             status: { not: 'CANCELLED' },
           },
           include: {
@@ -373,7 +377,8 @@ async function create(req, res) {
               paymentStatus: isFreeOrder ? 'PAID' : 'UNPAID',
               paymentMethod: isFreeOrder ? 'OTHER' : undefined,
               status: isFreeOrder ? 'COMPLETED' : 'DRAFT',
-              paidAt: isFreeOrder ? new Date() : undefined,
+              orderDate,
+              paidAt: isFreeOrder ? orderDate : undefined,
               bookStatus,
               notes: [notes, discount > 0 ? `Discount Applied: ₹${discount.toFixed(2)}` : null].filter(Boolean).join('\n') || undefined,
               items: { create: itemsData },
@@ -403,7 +408,7 @@ async function create(req, res) {
               discount > 0
                 ? `Complimentary — full discount (₹${discount.toFixed(2)})`
                 : 'Complimentary — no charge',
-            paidAt: new Date(),
+            paidAt: orderDate,
           },
         })
       }
@@ -414,6 +419,7 @@ async function create(req, res) {
         student: order.student,
         branchName,
         performedById: req.user.id,
+        eventDate: orderDate,
       })
 
       return { order, stockWarnings }
@@ -461,7 +467,11 @@ async function getOne(req, res) {
       ? { branchId: req.user.branchId }
       : {}
     const order = await prisma.order.findFirst({
-      where: { id: req.params.id, ...branchGuard, student: { class: { grade: SUPPORTED_CLASS_GRADE } } },
+      where: {
+        OR: [{ id: req.params.id }, { orderId: req.params.id }],
+        ...branchGuard,
+        student: { class: { grade: SUPPORTED_CLASS_GRADE } },
+      },
       include: {
         student: { include: { class: true } },
         branch: true,
@@ -509,7 +519,7 @@ async function processPayment(req, res) {
   const startedAt = Date.now()
   console.log('[orders.processPayment] start', { orderId: req.params.id })
   try {
-    const { amount, paymentMethod, referenceId, notes, discountAmount = 0 } = req.body
+    const { amount, paymentMethod, referenceId, notes, discountAmount = 0, paidAt: paidAtRaw } = req.body
     if (amount === undefined || amount === null || Number.isNaN(Number(amount))) {
       return badRequest(res, 'amount is required')
     }
@@ -517,6 +527,13 @@ async function processPayment(req, res) {
 
     const paymentAmount = Number(amount)
     if (paymentAmount < 0) return badRequest(res, 'amount cannot be negative')
+
+    let paymentPaidAt = new Date()
+    if (paidAtRaw) {
+      const resolved = resolveOrderDateInput(paidAtRaw)
+      if (!resolved.ok) return badRequest(res, resolved.error)
+      paymentPaidAt = resolved.orderDate
+    }
 
     const branchGuard = req.user?.role !== 'SUPER_ADMIN' && req.user?.branchId
       ? { branchId: req.user.branchId }
@@ -579,7 +596,7 @@ async function processPayment(req, res) {
           status: txStatus,
           referenceId,
           notes,
-          paidAt: new Date(),
+          paidAt: paymentPaidAt,
         },
       })
 
@@ -591,7 +608,7 @@ async function processPayment(req, res) {
           paymentStatus,
           paymentMethod,
           referenceId,
-          paidAt: paymentStatus === 'PAID' ? new Date() : undefined,
+          paidAt: paymentStatus === 'PAID' ? paymentPaidAt : undefined,
           status: paymentStatus === 'PAID' ? 'COMPLETED' : 'PROCESSING',
           notes: discount > 0
             ? [order.notes, `Discount Applied: ₹${discount.toFixed(2)}`].filter(Boolean).join('\n') || undefined
@@ -637,13 +654,17 @@ async function createGroup(req, res) {
   const startedAt = Date.now()
   console.log('[orders.createGroup] start', { branchId: req.body?.branchId, studentCount: req.body?.students?.length })
   try {
-    const { branchId, students, payment } = req.body
+    const { branchId, students, payment, orderDate: orderDateRaw } = req.body
     if (!branchId || !students?.length || !payment?.splitDetails?.length) {
       return badRequest(res, 'branchId, students, and payment.splitDetails are required')
     }
     if (students.length < 2 || students.length > 10) {
       return badRequest(res, 'Group orders require 2–10 students')
     }
+
+    const dateResolved = resolveOrderDateInput(orderDateRaw)
+    if (!dateResolved.ok) return badRequest(res, dateResolved.error)
+    const { orderDate, bounds: orderDateBounds } = dateResolved
 
     const studentIds = students.map((s) => s.studentId)
     if (new Set(studentIds).size !== studentIds.length) {
@@ -683,11 +704,6 @@ async function createGroup(req, res) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const tomorrow = new Date(today)
-      tomorrow.setDate(today.getDate() + 1)
-
       const createdOrders = []
       const allWarnings = []
 
@@ -700,7 +716,7 @@ async function createGroup(req, res) {
         const existingToday = await tx.order.findMany({
           where: {
             studentId: student.id,
-            createdAt: { gte: today, lt: tomorrow },
+            orderDate: { gte: orderDateBounds.start, lt: orderDateBounds.end },
             status: { not: 'CANCELLED' },
           },
           include: {
@@ -788,7 +804,8 @@ async function createGroup(req, res) {
                 paymentStatus: 'PAID',
                 paymentMethod: payment.splitDetails[0].paymentMethod,
                 status: 'COMPLETED',
-                paidAt: new Date(),
+                orderDate,
+                paidAt: orderDate,
                 bookStatus,
                 notes: [notes, discount > 0 ? `Discount Applied: ₹${discount.toFixed(2)}` : null].filter(Boolean).join('\n') || undefined,
                 items: { create: itemsData },
@@ -812,6 +829,7 @@ async function createGroup(req, res) {
           student: order.student,
           branchName,
           performedById: req.user.id,
+          eventDate: orderDate,
         })
         allWarnings.push(...warnings)
         createdOrders.push(order)
@@ -830,7 +848,7 @@ async function createGroup(req, res) {
             amount: alloc.amount,
             paymentMethod: alloc.paymentMethod,
             status: 'PAID',
-            paidAt: new Date(),
+            paidAt: orderDate,
           },
         })
       }
@@ -847,7 +865,7 @@ async function createGroup(req, res) {
               createdById: req.user.id,
               totalAmount: groupTotal,
               splitDetails: payment.splitDetails,
-              paidAt: new Date(),
+              paidAt: orderDate,
               orders: { connect: createdOrders.map((o) => ({ id: o.id })) },
             },
           })
@@ -962,7 +980,7 @@ async function getStudentOrders(req, res) {
 
     const orders = await prisma.order.findMany({
       where: { studentId, status: { not: 'CANCELLED' }, ...branchGuard },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ orderDate: 'desc' }, { createdAt: 'desc' }],
       include: {
         branch: { select: { name: true, code: true } },
         items: {

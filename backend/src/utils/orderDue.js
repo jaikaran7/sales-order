@@ -50,7 +50,7 @@ function creditOrderMatchesDateRange(order, dateFrom, dateTo) {
   const creditTxn = (order.transactions ?? []).find((tx) => tx.paymentMethod === 'CREDIT')
   const anchor = creditTxn
     ? new Date(creditTxn.paidAt ?? creditTxn.createdAt)
-    : new Date(order.createdAt)
+    : new Date(order.orderDate ?? order.createdAt)
 
   if (from && anchor < from) return false
   if (to && anchor > to) return false

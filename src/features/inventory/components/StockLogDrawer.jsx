@@ -84,7 +84,7 @@ export default function StockLogDrawer({ branchId, itemType, itemId, catalogKey,
   const exportCsv = () => {
     const headers = ['Date', 'Type', 'Qty Change', 'Before', 'After', 'Item', 'Performed By', 'Notes']
     const rows = logs.map((l) => [
-      new Date(l.createdAt).toLocaleString(),
+      new Date(l.eventDate ?? l.createdAt).toLocaleString(),
       TYPE_META[l.changeType]?.label ?? l.changeType,
       formatDelta(l.quantityDelta, l.changeType),
       l.quantityBefore,
@@ -232,7 +232,7 @@ export default function StockLogDrawer({ branchId, itemType, itemId, catalogKey,
                       <p className="mt-1 text-xs italic text-on-surface-variant">"{log.notes}"</p>
                     )}
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-outline">
-                      <span>{new Date(log.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                      <span>{new Date(log.eventDate ?? log.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
                       {log.performedBy?.displayName && <span>by {log.performedBy.displayName}</span>}
                     </div>
                   </div>

@@ -149,6 +149,12 @@ export const ordersApi = {
   getGroup: (groupId) => api.get(`/orders/group/${encodeURIComponent(groupId)}`),
   getStudentOrders: (studentId) => api.get(`/orders/students/${encodeURIComponent(studentId)}`),
   cancel: (id) => api.delete(`/orders/${id}`),
+  createEditRequest: (id, data) => api.post(`/orders/${id}/edit-requests`, data),
+  listEditRequests: (params) => api.get('/orders/edit-requests', { params }),
+  getEditRequest: (requestId) => api.get(`/orders/edit-requests/${requestId}`),
+  approveEditRequest: (requestId, data) => api.post(`/orders/edit-requests/${requestId}/approve`, data ?? {}),
+  rejectEditRequest: (requestId, data) => api.post(`/orders/edit-requests/${requestId}/reject`, data ?? {}),
+  withdrawEditRequest: (requestId) => api.post(`/orders/edit-requests/${requestId}/withdraw`),
 }
 
 // ─── Transactions ─────────────────────────────────────────────────────────────

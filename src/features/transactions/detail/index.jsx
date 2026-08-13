@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useApi } from '@/hooks/useApi'
 import { transactionsApi } from '@/services/api'
 import { useShellPaths } from '@/hooks/useShellPaths'
+import { useAnyPermission } from '@/hooks/usePermission'
 import FinancialSummary from './components/FinancialSummary'
 import OrderSummary from './components/OrderSummary'
 import StudentInfo from './components/StudentInfo'
@@ -82,8 +83,11 @@ export default function TransactionDetail() {
     [isGroup, rawData],
   )
   const canClearDue = Number(detail?.financial?.dueAmount ?? 0) > 0
+  const canEditOrder = useAnyPermission(['canPlaceOrders', 'canRequestOrderEdits', 'canCreateUniformOrders'])
   const reorderState = incomingReorderState ?? detail.reorderState
   const canReorder = Boolean(reorderState?.selectedStudents?.[0]?.id && reorderState?.selectedClass && reorderState?.selectedSection && reorderState?.branchId)
+  const orderPk = detail?.id || rawData?.id
+  const canOpenEdit = canEditOrder && !isGroup && Boolean(orderPk)
 
   return (
     <div className="min-h-screen bg-surface font-body text-on-surface">
@@ -181,6 +185,20 @@ export default function TransactionDetail() {
                   payments
                 </span>
                 Clear Due
+              </button>
+            )}
+            {canOpenEdit && (
+              <button
+                type="button"
+                onClick={() => navigate(paths.orderEdit(orderPk), {
+                  state: { returnTo: returnTo || paths.transactionDetail(orderPk) },
+                })}
+                className="flex items-center gap-2 rounded-xl bg-surface-container-lowest px-5 py-2.5 font-semibold text-on-surface shadow-sm transition-colors hover:bg-surface-container-high"
+              >
+                <span className="material-symbols-outlined text-[20px]" data-icon="edit" aria-hidden>
+                  edit
+                </span>
+                Edit Order
               </button>
             )}
             <button

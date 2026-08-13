@@ -233,6 +233,7 @@ async function computeOutstandingCreditKpi(query) {
       paidAmount: true,
       notes: true,
       paymentStatus: true,
+      orderDate: true,
       createdAt: true,
       transactions: {
         select: {
@@ -390,6 +391,7 @@ async function listByStudent(req, res) {
             total: true,
             paidAmount: true,
             paymentStatus: true,
+            orderDate: true,
             createdAt: true,
             student: {
               select: {
@@ -516,6 +518,8 @@ async function list(req, res) {
               notes: true,
               total: true,
               transactionGroupId: true,
+              orderDate: true,
+              createdAt: true,
               student: {
                 select: {
                   id: true,
@@ -618,10 +622,10 @@ async function listDues(req, res) {
     applyBranchToOrderWhere(dueConditions, branchScope)
     if (paymentMethod) dueConditions.push({ paymentMethod })
     if (dateFrom || dateTo) {
-      const createdAt = {}
-      if (dateFrom) createdAt.gte = new Date(dateFrom)
-      if (dateTo) createdAt.lte = new Date(dateTo)
-      dueConditions.push({ createdAt })
+      const orderDate = {}
+      if (dateFrom) orderDate.gte = new Date(dateFrom)
+      if (dateTo) orderDate.lte = new Date(dateTo)
+      dueConditions.push({ orderDate })
     }
     if (search) {
       dueConditions.push({
@@ -637,7 +641,7 @@ async function listDues(req, res) {
 
     const rows = await prisma.order.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ orderDate: 'desc' }, { createdAt: 'desc' }],
       include: {
         student: {
           select: {

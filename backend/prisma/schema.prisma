@@ -153,6 +153,8 @@ model User {
   expenseEntriesApproved         ExpenseEntry[]         @relation("ExpenseEntryApprovedBy")
   onlineSettlementsRecorded      OnlineSettlement[]     @relation("OnlineSettlementSettledBy")
   transactionGroups              TransactionGroup[]     @relation("TransactionGroupCreatedBy")
+  orderEditsRequested            OrderEditRequest[]     @relation("OrderEditRequestedBy")
+  orderEditsReviewed             OrderEditRequest[]     @relation("OrderEditReviewedBy")
 
   @@index([role])
   @@index([branchId])
@@ -202,6 +204,7 @@ model Branch {
   expenseRecipients     ExpenseRecipient[]     @relation("BranchExpenseRecipients")
   onlineSettlements     OnlineSettlement[]     @relation("BranchOnlineSettlements")
   transactionGroups     TransactionGroup[]     @relation("BranchTransactionGroups")
+  orderEditRequests     OrderEditRequest[]     @relation("BranchOrderEditRequests")
 
   @@index([type])
   @@index([isActive])
@@ -509,12 +512,14 @@ model Order {
   paidAmount        Decimal        @default(0) @db.Decimal(10, 2)
   referenceId       String?
   notes             String?
+  orderDate         DateTime       @default(now())
   paidAt            DateTime?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
   items        OrderItem[]
   transactions Transaction[]
+  editRequests OrderEditRequest[]
 
   transactionGroupId String?
   transactionGroup   TransactionGroup? @relation(fields: [transactionGroupId], references: [id])
@@ -524,6 +529,8 @@ model Order {
   @@index([paymentStatus])
   @@index([status])
   @@index([createdAt])
+  @@index([orderDate])
+  @@index([branchId, orderDate])
   @@index([transactionGroupId])
 }
 
@@ -682,11 +689,48 @@ model InventoryLog {
   performedById  String
   performedBy    User          @relation("LogPerformedBy", fields: [performedById], references: [id])
   notes          String?
+  eventDate      DateTime      @default(now())
   createdAt      DateTime      @default(now())
 
   @@index([branchId])
   @@index([itemType])
   @@index([createdAt])
+  @@index([eventDate])
+  @@index([branchId, eventDate])
+}
+
+enum OrderEditStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+model OrderEditRequest {
+  id             String          @id @default(cuid())
+  orderId        String
+  order          Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  branchId       String
+  branch         Branch          @relation("BranchOrderEditRequests", fields: [branchId], references: [id])
+  status         OrderEditStatus @default(PENDING)
+  reason         String?
+  beforeSnapshot Json
+  afterSnapshot  Json
+  diffSummary    Json?
+  requestedById  String
+  requestedBy    User            @relation("OrderEditRequestedBy", fields: [requestedById], references: [id])
+  reviewedById   String?
+  reviewedBy     User?           @relation("OrderEditReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt     DateTime?
+  reviewNote     String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([orderId])
+  @@index([branchId])
+  @@index([status])
+  @@index([status, createdAt])
+  @@index([branchId, status])
 }
 
 // ─── Publisher Accounts ───────────────────────────────────────────────────────

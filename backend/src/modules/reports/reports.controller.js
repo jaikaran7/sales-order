@@ -109,7 +109,7 @@ async function branchPerformance(req, res) {
     }
 
     const itemTypeFilter = itemType ? { items: { some: { itemType } } } : {}
-    const orderBaseWhere = { branchId: { in: branchIds }, createdAt: { gte: from, lte: to }, ...itemTypeFilter }
+    const orderBaseWhere = { branchId: { in: branchIds }, orderDate: { gte: from, lte: to }, ...itemTypeFilter }
 
     const [orderRows, revenueData, pendingOrders, uniqueStudentRows] = await Promise.all([
       prisma.order.findMany({ where: orderBaseWhere, select: { branchId: true } }),
@@ -275,13 +275,13 @@ async function salesTrend(req, res) {
 async function superDashboard(req, res) {
   try {
     const { from, to, cacheSuffix } = resolveDashboardRange(req.query)
-    // v2: align KPIs with branch-performance (no student-grade filter on orders/transactions)
-    const cacheKey = `reports:super-dashboard:v4:${cacheSuffix}`
+    // v5: order counts use business orderDate (not createdAt audit time)
+    const cacheKey = `reports:super-dashboard:v5:${cacheSuffix}`
     const cached = cache.get(cacheKey)
     if (cached) return ok(res, cached)
 
     const orderWindow = {
-      createdAt: { gte: from, lte: to },
+      orderDate: { gte: from, lte: to },
       branch: OPERATIONAL_BRANCH_FILTER,
     }
 
@@ -315,12 +315,13 @@ async function superDashboard(req, res) {
       prisma.order.findMany({
         take: 10,
         where: orderWindow,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ orderDate: 'desc' }, { createdAt: 'desc' }],
         select: {
           id: true,
           orderId: true,
           total: true,
           paymentStatus: true,
+          orderDate: true,
           createdAt: true,
           student: { select: { name: true, initials: true } },
           branch: { select: { name: true, code: true } },
@@ -399,7 +400,7 @@ async function adminDashboard(req, res) {
   try {
     const { branchId } = req.query
     const { from, to, cacheSuffix } = resolveDashboardRange(req.query)
-    const cacheKey = `reports:admin-dashboard:v4:${branchId || 'none'}:${cacheSuffix}`
+    const cacheKey = `reports:admin-dashboard:v5:${branchId || 'none'}:${cacheSuffix}`
     const cached = cache.get(cacheKey)
     if (cached) return ok(res, cached)
 
@@ -416,20 +417,20 @@ async function adminDashboard(req, res) {
       prisma.order.count({
         where: {
           ...baseOrder,
-          createdAt: { gte: from, lte: to },
+          orderDate: { gte: from, lte: to },
         },
       }),
       prisma.order.findMany({
         where: {
           ...baseOrder,
-          createdAt: { gte: from, lte: to },
+          orderDate: { gte: from, lte: to },
         },
         select: { studentId: true },
       }),
       prisma.order.findMany({
         where: {
           ...baseOrder,
-          createdAt: { gte: from, lte: to },
+          orderDate: { gte: from, lte: to },
           paymentStatus: { in: ['UNPAID', 'PARTIAL'] },
         },
         select: { total: true, paidAmount: true },
@@ -437,15 +438,16 @@ async function adminDashboard(req, res) {
       prisma.order.findMany({
         where: {
           ...baseOrder,
-          createdAt: { gte: from, lte: to },
+          orderDate: { gte: from, lte: to },
         },
         take: 10,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ orderDate: 'desc' }, { createdAt: 'desc' }],
         select: {
           id: true,
           orderId: true,
           total: true,
           paymentStatus: true,
+          orderDate: true,
           createdAt: true,
           student: { select: { name: true, initials: true } },
           branch: { select: { name: true, code: true } },

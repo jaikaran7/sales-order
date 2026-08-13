@@ -113,7 +113,7 @@ function mapTransactionToRow(tx, idx) {
     orderPk: order.id ?? null,
     orderId: order.orderId ?? tx.id,
     date: formatDate(tx.paidAt ?? tx.createdAt),
-    orderedLine: `Ordered on ${new Date(tx.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+    orderedLine: `Ordered on ${new Date(order.orderDate ?? tx.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
     studentName: student.name ?? 'Unknown',
     initials: student.initials ?? '??',
     initialsClass: INITIALS_CLASSES[idx % INITIALS_CLASSES.length],
@@ -489,7 +489,7 @@ export default function Transactions() {
       return {
         id: order.id,
         orderId: order.orderId,
-        date: formatDate(order.createdAt),
+        date: formatDate(order.orderDate ?? order.createdAt),
         studentId: order.student?.id ?? null,
         studentName: order.student?.name ?? 'Unknown',
         studentRoll: order.student?.rollNumber ?? '',

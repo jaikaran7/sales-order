@@ -1,7 +1,8 @@
 const { Router } = require('express')
 const { z } = require('zod')
 const ctrl = require('./orders.controller')
-const { authenticate, enforceBranchScope, requirePermission, requireAnyPermission, currentPermissionValue } = require('../../middleware/auth')
+const editCtrl = require('./orderEdits.controller')
+const { authenticate, enforceBranchScope, requirePermission, requireAnyPermission, requireSuperAdmin, currentPermissionValue } = require('../../middleware/auth')
 const validate = require('../../middleware/validate')
 
 const router = Router()
@@ -60,6 +61,7 @@ const createGroupSchema = {
     payment: z.object({
       splitDetails: z.array(splitDetailSchema).min(1),
     }),
+    orderDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   }),
 }
 
@@ -71,6 +73,7 @@ const createSchema = {
     discountAmount: z.number().min(0).optional(),
     totalAmount: z.number().min(0).optional(),
     notes: z.string().optional(),
+    orderDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   }),
 }
 
@@ -85,6 +88,7 @@ const paymentSchema = {
     referenceId: z.string().optional(),
     notes: z.string().optional(),
     discountAmount: z.number().min(0).optional(),
+    paidAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   }),
 }
 
@@ -123,6 +127,52 @@ router.post('/', requireAnyPermission('canPlaceOrders', 'canCreateUniformOrders'
 router.post('/group', requireAnyPermission('canPlaceOrders', 'canCreateUniformOrders'), enforceBranchScope, validate(createGroupSchema), requireGroupItemPermissions, ctrl.createGroup)
 router.get('/group/:groupId', requireAnyPermission('canPlaceOrders', 'canViewStudentPurchaseDetails'), enforceBranchScope, ctrl.getGroup)
 router.get('/students/:studentId', requireAnyPermission('canPlaceOrders', 'canViewStudentPurchaseDetails'), ctrl.getStudentOrders)
+
+// Order edit requests (approval workflow)
+const editRequestBodySchema = {
+  body: z.object({
+    reason: z.string().optional(),
+    orderDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    notes: z.string().nullable().optional(),
+    bookStatus: z.enum(['TAKEN', 'PARTIAL', 'NOT_TAKEN']).optional(),
+    uniformStatus: z.enum(['COMPLETE', 'PARTIAL', 'PENDING']).optional(),
+    total: z.number().min(0).optional(),
+    paidAmount: z.number().min(0).optional(),
+    status: z.enum(['DRAFT', 'CONFIRMED', 'PROCESSING', 'COMPLETED', 'CANCELLED']).optional(),
+    paymentStatus: z.enum(['UNPAID', 'PARTIAL', 'PAID', 'REFUNDED']).optional(),
+    paymentMethod: z.enum([
+      'CASH', 'ONLINE', 'CANARA_UPI', 'BOB_UPI', 'UPI_BHARATH', 'UPI_POORNIMA',
+      ...BRANCH_UPI_PAYMENT_METHODS,
+      'CARD', 'CHEQUE', 'BANK_TRANSFER', 'GPAY', 'PHONEPE', 'PAYTM', 'CREDIT', 'OTHER',
+    ]).optional().nullable(),
+    items: z.array(z.object({
+      itemType: z.enum(['BOOK', 'UNIFORM', 'ACCESSORY']),
+      itemId: z.string().min(1),
+      label: z.string().min(1),
+      quantity: z.number().int().positive(),
+      unitPrice: z.number().min(0),
+    })).min(1).optional(),
+    transactions: z.array(z.object({
+      amount: z.number(),
+      paymentMethod: z.enum([
+        'CASH', 'ONLINE', 'CANARA_UPI', 'BOB_UPI', 'UPI_BHARATH', 'UPI_POORNIMA',
+        ...BRANCH_UPI_PAYMENT_METHODS,
+        'CARD', 'CHEQUE', 'BANK_TRANSFER', 'GPAY', 'PHONEPE', 'PAYTM', 'CREDIT', 'OTHER',
+      ]),
+      status: z.enum(['UNPAID', 'PARTIAL', 'PAID', 'REFUNDED']).optional(),
+      referenceId: z.string().optional().nullable(),
+      notes: z.string().optional().nullable(),
+      paidAt: z.union([z.string(), z.date()]).optional().nullable(),
+    })).optional(),
+  }),
+}
+
+router.get('/edit-requests', requireAnyPermission('canPlaceOrders', 'canRequestOrderEdits', 'canViewStudentPurchaseDetails'), enforceBranchScope, editCtrl.listEditRequests)
+router.get('/edit-requests/:requestId', requireAnyPermission('canPlaceOrders', 'canRequestOrderEdits', 'canViewStudentPurchaseDetails'), enforceBranchScope, editCtrl.getEditRequest)
+router.post('/edit-requests/:requestId/approve', requireSuperAdmin, validate({ body: z.object({ reviewNote: z.string().optional() }) }), editCtrl.approveEditRequest)
+router.post('/edit-requests/:requestId/reject', requireSuperAdmin, validate({ body: z.object({ reviewNote: z.string().optional() }) }), editCtrl.rejectEditRequest)
+router.post('/edit-requests/:requestId/withdraw', requireAnyPermission('canPlaceOrders', 'canRequestOrderEdits'), enforceBranchScope, editCtrl.withdrawEditRequest)
+router.post('/:id/edit-requests', requireAnyPermission('canPlaceOrders', 'canRequestOrderEdits', 'canCreateUniformOrders'), enforceBranchScope, validate(editRequestBodySchema), editCtrl.createEditRequest)
 
 router.get('/:id', requireAnyPermission('canPlaceOrders', 'canViewStudentPurchaseDetails'), enforceBranchScope, ctrl.getOne)
 router.patch('/:id', requirePermission('canPlaceOrders'), enforceBranchScope, validate(updateSchema), ctrl.update)

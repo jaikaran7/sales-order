@@ -86,12 +86,14 @@ export function buildTransactionDetailFromOrder(order) {
       }
     : null
 
+  const businessDate = order?.orderDate ?? order?.createdAt
+
   const timeline = [
     {
       key: 'created',
       title: 'Order Created',
       description: 'Order has been placed',
-      time: formatDateTime(order?.createdAt),
+      time: formatDateTime(businessDate),
       status: 'done',
       icon: 'check',
     },
@@ -121,7 +123,7 @@ export function buildTransactionDetailFromOrder(order) {
     id: String(order?.id ?? ''),
     orderId: order?.orderId ?? '—',
     status: mapStatus(order?.paymentStatus ?? order?.status),
-    orderedLine: `Ordered on ${formatDateTime(order?.createdAt)}`,
+    orderedLine: `Ordered on ${formatDateTime(businessDate)}`,
     orderNotes: order?.notes ?? '',
     bookBadge: `Books: ${bookItems.length} item${bookItems.length === 1 ? '' : 's'}`,
     uniformBadge: `Uniform: ${uniformItemsRaw.length} item${uniformItemsRaw.length === 1 ? '' : 's'}`,

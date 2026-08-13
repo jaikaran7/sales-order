@@ -958,7 +958,7 @@ async function getLogs(req, res) {
 
     const logs = await prisma.inventoryLog.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ eventDate: 'desc' }, { createdAt: 'desc' }],
       take: parseInt(limit),
       include: {
         bookItem: { select: { id: true, label: true } },

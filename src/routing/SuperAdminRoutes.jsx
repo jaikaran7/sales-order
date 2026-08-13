@@ -8,6 +8,8 @@ import AdmissionPayment from '@/features/admissions/payment'
 import AdmissionTransactions from '@/features/admissions/transactions'
 import Transactions from '@/features/transactions'
 import TransactionDetail from '@/features/transactions/detail'
+import OrderEditFormPage from '@/features/orders/edit-order'
+import OrderEditRequestsPage from '@/features/orders/edit-requests'
 import SuperAdminDashboard from '@/features/super-admin/dashboard'
 import SuperAdminSalesOverview from '@/features/super-admin/sales-overview'
 import BulkImport from '@/features/super-admin/bulk-import'
@@ -26,6 +28,8 @@ export const superAdminShellRouteTree = (
     <Route path="orders/new" element={<NewOrderSelection />} />
     <Route path="orders/configure" element={<OrderConfiguration />} />
     <Route path="orders/payment" element={<OrderPayment />} />
+    <Route path="orders/:id/edit" element={<OrderEditFormPage />} />
+    <Route path="order-edits" element={<OrderEditRequestsPage />} />
     <Route path="admissions" element={<AdmissionsList />} />
     <Route path="admissions/payment" element={<AdmissionPayment />} />
     <Route path="admissions/transactions" element={<AdmissionTransactions />} />

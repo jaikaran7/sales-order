@@ -23,6 +23,8 @@ function LayoutShell() {
     pathname.startsWith('/super/orders/new') ||
     pathname.startsWith('/super/orders/configure') ||
     pathname.startsWith('/super/orders/payment') ||
+    (pathname.includes('/orders/') && pathname.endsWith('/edit')) ||
+    pathname.startsWith('/super/order-edits') ||
     pathname.startsWith('/admin/orders') ||
     pathname.startsWith('/senior/orders')
   const isTransactionDetail =
